@@ -89,9 +89,54 @@
     .log-dup { color: var(--danger); font-weight: 600; }
 
     @keyframes blinker { 50% { opacity: 0.4; } }
+
+    /* =========================================================================
+       NEW CSS STYLING FOR DYNAMIC DIALOG CONTAINER POPUP
+       ========================================================================= */
+    .custom-modal-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background-color: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(4px);
+      display: flex; justify-content: center; align-items: center;
+      z-index: 9999; opacity: 0; pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+    .custom-modal-overlay.active { opacity: 1; pointer-events: auto; }
+    .custom-modal-card {
+      background: white; padding: 28px; width: 90%; max-width: 380px;
+      border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+      text-align: center; transform: scale(0.8); transition: transform 0.3s ease;
+      border-top: 6px solid var(--danger);
+    }
+    .custom-modal-overlay.active .custom-modal-card { transform: scale(1); }
+    .modal-icon { font-size: 42px; margin-bottom: 12px; }
+    .modal-title { font-size: 1.25em; font-weight: 700; color: #c5221f; margin: 0 0 10px 0; }
+    .modal-msg { font-size: 0.95em; line-height: 1.5; color: var(--text); margin-bottom: 16px; }
+    .modal-data-box {
+      background-color: #f8f9fa; border: 1px dashed #fad2cf;
+      padding: 10px 14px; border-radius: 8px; font-size: 0.85em;
+      font-weight: 600; color: #5f6368; word-break: break-all; margin-bottom: 20px;
+    }
+    .modal-btn {
+      background-color: var(--danger); color: white; border: none;
+      padding: 10px 24px; font-size: 0.9em; font-weight: 600;
+      border-radius: 20px; cursor: pointer; transition: background 0.2s;
+    }
+    .modal-btn:hover { background-color: #a51d1a; }
   </style>
 </head>
 <body>
+
+  <!-- MODERN CONTAINER DIALOG STRUCTURE -->
+  <div id="customModal" class="custom-modal-overlay">
+    <div class="custom-modal-card">
+      <div class="modal-icon">⚠️</div>
+      <div class="modal-title">Access Denied</div>
+      <div class="modal-msg">You were <b>absent</b> during the previous session.<br>Please meet the HOD before gaining attendance authorization.</div>
+      <div id="modalDataContent" class="modal-data-box"></div>
+      <button class="modal-btn" onclick="closeCustomModal()">Acknowledge & Dismiss</button>
+    </div>
+  </div>
 
   <div class="container">
     <div id="login-section">
@@ -137,17 +182,19 @@
     let sessionScans = []; 
     let uploadQueue = [];
     let isProcessingQueue = false;
+    let html5QrCodeScanner = null; // Track scanner state global variable
+    let isModalOpen = false;
 
     function playBeep(isSuccess) {
       try {
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const oscillator = audioCtx.createOscillator();
         const gainNode = audioCtx.createGain();
-         oscillator.connect(gainNode); gainNode.connect(audioCtx.destination);
+        oscillator.connect(gainNode); gainNode.connect(audioCtx.destination);
         oscillator.type = 'sine';
-        oscillator.frequency.setValueAtTime(isSuccess ? 1200 : 400, audioCtx.currentTime); 
+        oscillator.frequency.setValueAtTime(isSuccess ? 1200 : 350, audioCtx.currentTime); 
         gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
-        oscillator.start(); oscillator.stop(audioCtx.currentTime + (isSuccess ? 0.08 : 0.25));
+        oscillator.start(); oscillator.stop(audioCtx.currentTime + (isSuccess ? 0.08 : 0.35));
       } catch (e) { console.log(e); }
     }
 
@@ -187,7 +234,7 @@
     }
 
     function initBalancedScanner() {
-      const html5QrCode = new Html5Qrcode("reader");
+      html5QrCodeScanner = new Html5Qrcode("reader");
       Html5Qrcode.getCameras().then(cameras => {
         if (cameras && cameras.length) {
           let rearCamera = cameras.find(camera =>
@@ -196,7 +243,7 @@
             camera.label.toLowerCase().includes("environment")
           );
           let cameraId = rearCamera ? rearCamera.id : cameras[0].id;
-          html5QrCode.start(
+          html5QrCodeScanner.start(
             cameraId,
             {
               fps: 30,
@@ -212,6 +259,7 @@
     }
 
     function onScanMatch(decodedText) {
+      if(isModalOpen) return; // Prevent overlapping scans while container is open
       const now = new Date();
       if (localMemoryCache[decodedText] && (now - localMemoryCache[decodedText] < 2500)) return; 
       localMemoryCache[decodedText] = now;
@@ -268,9 +316,6 @@
           }
           if (savedIndex !== -1) sessionScans[savedIndex].status = "Saved";
         } else if (data.status === "ABSENT_BLOCKED") {
-          // =========================================================================
-          // TRIGGER POPUP ALERTS FOR DETECTED PREVIOUS SESSION ABSENTEES
-          // =========================================================================
           playBeep(false); 
           showToast("❌ Blocked: Absent in previous session", "status-error");
           
@@ -280,7 +325,8 @@
           }
           if (savedIndex !== -1) sessionScans[savedIndex].status = "Absent Blocked";
           
-          alert("You were absent to the previous session, meet HOD, then come to scan");
+          // Trigger the container popup and inject payload data safely
+          openCustomModal(currentItem.qrContent);
         } else if (data.status === "DUPLICATE") {
           if (rowElement) {
             rowElement.querySelector('.log-pending').className = "log-dup";
@@ -301,6 +347,22 @@
         isProcessingQueue = false;
         setTimeout(processBackgroundQueue, 3000);
       });
+    }
+
+    // =========================================================================
+    // POPUP CONTROL CONTROLLERS
+    // =========================================================================
+    function openCustomModal(qrData) {
+      isModalOpen = true;
+      document.getElementById('modalDataContent').innerText = "QR Data: " + qrData;
+      document.getElementById('customModal').classList.add('active');
+    }
+
+    function closeCustomModal() {
+      document.getElementById('customModal').classList.remove('active');
+      setTimeout(() => {
+        isModalOpen = false;
+      }, 500); // Small buffer delay to prevent immediate re-triggers
     }
 
     function showToast(msg, styleClass) {
