@@ -143,7 +143,7 @@
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const oscillator = audioCtx.createOscillator();
         const gainNode = audioCtx.createGain();
-        oscillator.connect(gainNode); gainNode.connect(audioCtx.destination);
+         oscillator.connect(gainNode); gainNode.connect(audioCtx.destination);
         oscillator.type = 'sine';
         oscillator.frequency.setValueAtTime(isSuccess ? 1200 : 400, audioCtx.currentTime); 
         gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
@@ -187,38 +187,30 @@
     }
 
     function initBalancedScanner() {
-
-  const html5QrCode = new Html5Qrcode("reader");
-
-  Html5Qrcode.getCameras().then(cameras => {
-
-    if (cameras && cameras.length) {
-
-      let rearCamera = cameras.find(camera =>
-        camera.label.toLowerCase().includes("back") ||
-        camera.label.toLowerCase().includes("rear") ||
-        camera.label.toLowerCase().includes("environment")
-      );
-
-      let cameraId = rearCamera ? rearCamera.id : cameras[0].id;
-
-      html5QrCode.start(
-        cameraId,
-        {
-          fps: 30,
-          qrbox: 200
-        },
-        onScanMatch,
-        (err) => {}
-      );
-
+      const html5QrCode = new Html5Qrcode("reader");
+      Html5Qrcode.getCameras().then(cameras => {
+        if (cameras && cameras.length) {
+          let rearCamera = cameras.find(camera =>
+            camera.label.toLowerCase().includes("back") ||
+            camera.label.toLowerCase().includes("rear") ||
+            camera.label.toLowerCase().includes("environment")
+          );
+          let cameraId = rearCamera ? rearCamera.id : cameras[0].id;
+          html5QrCode.start(
+            cameraId,
+            {
+              fps: 30,
+              qrbox: 200
+            },
+            onScanMatch,
+            (err) => {}
+          );
+        }
+      }).catch(err => {
+        console.log(err);
+      });
     }
 
-  }).catch(err => {
-    console.log(err);
-  });
-
-}
     function onScanMatch(decodedText) {
       const now = new Date();
       if (localMemoryCache[decodedText] && (now - localMemoryCache[decodedText] < 2500)) return; 
@@ -275,6 +267,20 @@
             rowElement.querySelector('.log-success').innerText = "✓ Saved";
           }
           if (savedIndex !== -1) sessionScans[savedIndex].status = "Saved";
+        } else if (data.status === "ABSENT_BLOCKED") {
+          // =========================================================================
+          // TRIGGER POPUP ALERTS FOR DETECTED PREVIOUS SESSION ABSENTEES
+          // =========================================================================
+          playBeep(false); 
+          showToast("❌ Blocked: Absent in previous session", "status-error");
+          
+          if (rowElement) {
+            rowElement.querySelector('.log-pending').className = "log-dup";
+            rowElement.querySelector('.log-dup').innerText = "❌ Blocked";
+          }
+          if (savedIndex !== -1) sessionScans[savedIndex].status = "Absent Blocked";
+          
+          alert("You were absent to the previous session, meet HOD, then come to scan");
         } else if (data.status === "DUPLICATE") {
           if (rowElement) {
             rowElement.querySelector('.log-pending').className = "log-dup";
@@ -326,9 +332,12 @@
         
         for (let index = startIdx; index < endIdx; index++) {
           const row = sessionScans[index];
-          const rowColor = row.status.includes("Duplicate") 
-            ? "style='background-color:#fce8e6; color:#c5221f; font-weight:bold;'" 
-            : "";
+          let rowColor = "";
+          if (row.status.includes("Duplicate")) {
+            rowColor = "style='background-color:#fce8e6; color:#c5221f; font-weight:bold;'";
+          } else if (row.status.includes("Absent")) {
+            rowColor = "style='background-color:#fff3cd; color:#b06000; font-weight:bold;'";
+          }
           
           currentPageRows += `
             <tr ${rowColor}>
@@ -391,8 +400,6 @@
               .print-page:last-child { page-break-after: avoid; }
             }
             body { font-family: 'Segoe UI', Arial, sans-serif; color: #333; margin: 0; padding: 0; background-color: #f4f4f4; }
-            
-            /* FIXED: Changed layout structure to flex column to naturally push footer to bottom without overlay risk */
             .print-page {
               background: white;
               width: 210mm;
@@ -405,21 +412,14 @@
               flex-direction: column;
               justify-content: space-between;
             }
-            
-            .content-body {
-              width: 100%;
-            }
-            
+            .content-body { width: 100%; }
             .header { border-bottom: 2px solid #1a73e8; padding-bottom: 10px; margin-bottom: 20px; text-align: left; }
             .header h1 { margin: 0; color: #1a73e8; font-size: 24px; font-family: 'Bookman Old Style', Georgia, serif; }
             .header p { margin: 6px 0 0 0; color: #5f6368; font-size: 13px; line-height: 1.5; }
-            
             table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
             th, td { border: 1px solid #dadce0; padding: 6px 8px; text-align: left; line-height: 1.3; }
             th { background-color: #f1f3f4; font-weight: 600; color: #202124; }
             tr:nth-child(even) { background-color: #f8f9fa; }
-            
-            /* FIXED: Dropped position absolute so that it cleanly stacks beneath the table structure safely */
             .divFooter {
               width: 100%;
               display: flex;
@@ -452,4 +452,3 @@
   </script>
 </body>
 </html>
-<!-- Final Test -->
